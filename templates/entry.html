@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Code Repository Analyzer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        #result {
+            margin-top: 20px;
+        }
+        .progress-container {
+            margin-top: 20px;
+            display: none;
+        }
+        .progress-bar {
+            width: 100%;
+            background-color: #f3f3f3;
+            border-radius: 4px;
+            padding: 3px;
+        }
+        .progress {
+            height: 24px;
+            background-color: #4CAF50;
+            border-radius: 4px;
+            width: 0%;
+            text-align: center;
+            line-height: 24px;
+            color: white;
+            transition: width 0.3s ease;
+        }
+        .progress-info {
+            margin-top: 10px;
+            font-size: 14px;
+        }
+        .function-name {
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>Code Repository Analyzer</h1>
+    <div class="form-group">
+        <label for="repo-url">GitHub Repository URL:</label>
+        <input type="text" id="repo-url" placeholder="https://github.com/username/repo">
+    </div>
+    <button onclick="analyzeRepo()">Analyze Repository</button>
+    
+    <div class="progress-container" id="progress-container">
+        <h3>Analysis Progress</h3>
+        <div class="progress-bar">
+            <div class="progress" id="progress-bar">0%</div>
+        </div>
+        <div class="progress-info" id="progress-info">
+            Initializing...
+        </div>
+    </div>
+    
+    <div id="result"></div>
+
+    <script>
+        function analyzeRepo() {
+            const repoUrl = document.getElementById('repo-url').value;
+            if (!repoUrl) {
+                alert('Please enter a repository URL');
+                return;
+            }
+            
+            // Reset UI
+            document.getElementById('result').innerHTML = '';
+            document.getElementById('progress-container').style.display = 'block';
+            document.getElementById('progress-bar').style.width = '0%';
+            document.getElementById('progress-bar').textContent = '0%';
+            document.getElementById('progress-info').textContent = 'Cloning repository...';
+            
+            // Start the analysis
+            fetch('/analyze', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ repo_url: repoUrl })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.status === 'success') {
+                    // Set progress to 100% when complete
+                    document.getElementById('progress-bar').style.width = '100%';
+                    document.getElementById('progress-bar').textContent = '100%';
+                    document.getElementById('progress-info').textContent = 'Analysis complete! Redirecting...';
+                    
+                    // Redirect after a short delay to show completion
+                    setTimeout(() => {
+                        window.location.href = '/results';
+                    }, 1000);
+                } else {
+                    document.getElementById('progress-container').style.display = 'none';
+                    document.getElementById('result').innerHTML = 
+                        `Error: ${data.message || 'Unknown error occurred'}`;
+                }
+            })
+            .catch(error => {
+                document.getElementById('progress-container').style.display = 'none';
+                document.getElementById('result').innerHTML = 
+                    `Error: ${error.message || 'Unknown error occurred'}`;
+            });
+            
+            // Start polling for progress updates
+            startProgressPolling(repoUrl);
+        }
+        
+        function startProgressPolling(repoUrl) {
+            const pollInterval = setInterval(() => {
+                fetch('/progress', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ repo_url: repoUrl })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'processing') {
+                        // Update progress bar
+                        const percentage = data.progress;
+                        document.getElementById('progress-bar').style.width = `${percentage}%`;
+                        document.getElementById('progress-bar').textContent = `${percentage}%`;
+                        
+                        // Update current function info
+                        if (data.current_function) {
+                            document.getElementById('progress-info').innerHTML = `
+                                Analyzing function: <span class="function-name">${data.current_function}</span>
+                                (${data.current_index} of ${data.total_functions})
+                            `;
+                        }
+                    } 
+                    else if (data.status === 'complete') {
+                        // Analysis is complete, stop polling
+                        clearInterval(pollInterval);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching progress:', error);
+                });
+            }, 1000); // Poll every second
+            
+            // Store the interval ID to clear it if needed
+            window.progressPollInterval = pollInterval;
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Repository Analysis Results</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .dropdown { padding-left: 20px; margin: 5px; }
+        .dropdown-item { cursor: pointer; padding: 5px; }
+        .description { color: #666; font-size: 0.9em; }
+        h1 { margin-bottom: 20px; }
+        .back-link { margin-bottom: 20px; display: block; }
+        .loading { color: #999; font-style: italic; }
+        .function-calls { color: #0066cc; }
+    </style>
+</head>
+<body>
+    <h1>Repository Analysis Results</h1>
+    <a href="/" class="back-link">← Back to repository input</a>
+    
+    <div id="hierarchy"></div>
+
+    <script>
+        // Store hierarchy data globally
+        const hierarchyData = {{ hierarchy|tojson }};
+        
+        function createDropdown(items) {
+            const ul = document.createElement('ul');
+            ul.className = 'dropdown';
+            
+            if (!items || items.length === 0) {
+                const li = document.createElement('li');
+                li.textContent = "No functions found or analysis failed";
+                ul.appendChild(li);
+                return ul;
+            }
+            
+            items.forEach(item => {
+                const li = document.createElement('li');
+                li.className = 'dropdown-item';
+                
+                const header = document.createElement('div');
+                header.innerHTML = `
+                    ${item.summary || 'Unknown'} 
+                    <span class="description">(${item.original || 'unnamed'})</span>
+                `;
+
+                const desc = document.createElement('div');
+                desc.className = 'description';
+                desc.textContent = item.description || 'No description available';
+                
+                li.appendChild(header);
+                li.appendChild(desc);
+
+                // Create child dropdown container but don't populate it yet
+                const childDropdown = document.createElement('ul');
+                childDropdown.className = 'dropdown';
+                childDropdown.style.display = 'none';
+                childDropdown.setAttribute('data-loaded', 'false');
+                li.appendChild(childDropdown);
+                
+                // We'll load function calls on click
+                let isFirstClick = true;
+                
+                header.addEventListener('click', () => {
+                    // Toggle display
+                    childDropdown.style.display = childDropdown.style.display === 'none' ? 'block' : 'none';
+                    
+                    // If this is the first click and we have code, fetch function calls
+                    if (isFirstClick && item.code && childDropdown.getAttribute('data-loaded') === 'false') {
+                        isFirstClick = false;
+                        childDropdown.setAttribute('data-loaded', 'true');
+                        
+                        // Show loading message
+                        const loadingLi = document.createElement('li');
+                        loadingLi.className = 'loading';
+                        loadingLi.textContent = 'Loading function calls...';
+                        childDropdown.appendChild(loadingLi);
+                        
+                        // Fetch function calls
+                        fetch('/get_function_calls', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                function_code: item.code,
+                                function_name: item.original
+                            }),
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            // Clear loading message
+                            childDropdown.innerHTML = '';
+                            
+                            if (data.status === 'success') {
+                                if (data.children.length === 0) {
+                                    const noCallsLi = document.createElement('li');
+                                    noCallsLi.textContent = 'No function calls found';
+                                    childDropdown.appendChild(noCallsLi);
+                                } else {
+                                    // Title for the function calls section
+                                    const titleLi = document.createElement('li');
+                                    titleLi.className = 'function-calls';
+                                    titleLi.textContent = 'Function calls:';
+                                    childDropdown.appendChild(titleLi);
+                                    
+                                    // Add each function call
+                                    const callsDropdown = createDropdown(data.children);
+                                    callsDropdown.style.display = 'block';
+                                    childDropdown.appendChild(callsDropdown);
+                                }
+                            } else {
+                                const errorLi = document.createElement('li');
+                                errorLi.textContent = `Error: ${data.message}`;
+                                childDropdown.appendChild(errorLi);
+                            }
+                        })
+                        .catch(error => {
+                            childDropdown.innerHTML = '';
+                            const errorLi = document.createElement('li');
+                            errorLi.textContent = `Error fetching function calls: ${error}`;
+                            childDropdown.appendChild(errorLi);
+                        });
+                    }
+                });
+
+                // If we already have children (pre-loaded), display them
+                if (item.children && item.children.length > 0) {
+                    const existingChildDropdown = createDropdown(item.children);
+                    childDropdown.appendChild(existingChildDropdown);
+                    childDropdown.setAttribute('data-loaded', 'true');
+                }
+
+                ul.appendChild(li);
+            });
+            return ul;
+        }
+
+        // Render initial hierarchy
+        console.log('Hierarchy data:', hierarchyData); // For debugging
+        document.getElementById('hierarchy').appendChild(createDropdown(hierarchyData));
+    </script>
+</body>
+</html>
